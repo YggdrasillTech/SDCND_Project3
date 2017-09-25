@@ -15,6 +15,9 @@ from io import BytesIO
 from keras.models import load_model
 import h5py
 from keras import __version__ as keras_version
+from keras.models import Model, model_from_json
+
+import cv2
 
 sio = socketio.Server()
 app = Flask(__name__)
@@ -40,11 +43,11 @@ class SimplePIController:
         # integral error
         self.integral += self.error
 
-        return self.Kp * self.error + self.Ki * self.integral
+        return (self.Kp * self.error) + (self.Ki * self.integral)
 
 
 controller = SimplePIController(0.1, 0.002)
-set_speed = 9
+set_speed = 5.0
 controller.set_desired(set_speed)
 
 
@@ -61,6 +64,8 @@ def telemetry(sid, data):
         imgString = data["image"]
         image = Image.open(BytesIO(base64.b64decode(imgString)))
         image_array = np.asarray(image)
+        image_array = image_array[50:140,:,:]
+        image_array = cv2.resize(image_array,(64, 64), interpolation = cv2.INTER_AREA)
         steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
 
         throttle = controller.update(float(speed))
@@ -109,17 +114,11 @@ if __name__ == '__main__':
         help='Path to image folder. This is where the images from the run will be saved.'
     )
     args = parser.parse_args()
-
-    # check that model Keras version is same as local Keras version
-    f = h5py.File(args.model, mode='r')
-    model_version = f.attrs.get('keras_version')
-    keras_version = str(keras_version).encode('utf8')
-
-    if model_version != keras_version:
-        print('You are using Keras version ', keras_version,
-              ', but the model was built using ', model_version)
-
-    model = load_model(args.model)
+        
+    with open(args.model + "\model.json", 'r') as jfile:
+        model = model_from_json(jfile.read())
+        
+    model.load_weights(filepath = args.model + "\model.h5")
 
     if args.image_folder != '':
         print("Creating image folder at {}".format(args.image_folder))
